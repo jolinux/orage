@@ -20,6 +20,12 @@
        Boston, MA 02110-1301 USA
 
  */
+/* 
+ * Copyright (c) 2018 März J. Alpers 
+ * Bugfix ID 13346 
+ * New workflow to generate event with DURATION by full-day
+ * Just use StartDate and EndDate
+ */
 
 #ifndef __APPOINTMENT_H__
 #define __APPOINTMENT_H__
@@ -67,6 +73,7 @@ typedef struct _appt_win
     GtkWidget *StartTime_spin_hh;
     GtkWidget *StartTime_spin_mm;
     GtkWidget *StartTimezone_button;
+	GtkWidget *Dur_AllDay_label;
     GtkWidget *End_label;
     GtkWidget *End_hbox;
     GtkWidget *End_checkbutton;
@@ -75,6 +82,7 @@ typedef struct _appt_win
     GtkWidget *EndTime_spin_hh;
     GtkWidget *EndTime_spin_mm;
     GtkWidget *EndTimezone_button;
+	GtkWidget *Dur_AllDay_Number_label;
     GtkWidget *Dur_hbox;
     GtkWidget *Dur_checkbutton;
     GtkWidget *Dur_time_hbox;

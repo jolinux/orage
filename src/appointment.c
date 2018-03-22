@@ -20,6 +20,12 @@
        Boston, MA 02110-1301 USA
 
  */
+/* 
+ * Copyright (c) 2018 März J. Alpers 
+ * Bugfix ID 13346 
+ * New workflow to generate event with DURATION by full-day
+ * Just use StartDate and EndDate
+ */
 
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
@@ -92,7 +98,7 @@ static gboolean fill_appt_from_apptw(xfical_appt *appt, appt_win *apptw);
 
 
 static GtkWidget *datetime_hbox_new(GtkWidget *date_button
-        , GtkWidget *spin_hh, GtkWidget *spin_mm
+        , GtkWidget *spin_hh, GtkWidget *spin_mm, GtkWidget *allday_label
         , GtkWidget *timezone_button)
 {
     GtkWidget *hbox, *space_label;
@@ -115,6 +121,13 @@ static GtkWidget *datetime_hbox_new(GtkWidget *date_button
     gtk_spin_button_set_increments(GTK_SPIN_BUTTON(spin_mm), 5, 10);
     /* gtk_widget_set_size_request(spin_mm, 40, -1); */
     gtk_box_pack_start(GTK_BOX(hbox), spin_mm, FALSE, FALSE, 0);
+	
+	if (allday_label) {
+		space_label = gtk_label_new("  ");
+        gtk_box_pack_start(GTK_BOX(hbox), space_label, FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(hbox), allday_label, FALSE, FALSE, 0);
+		gtk_label_set_width_chars (GTK_LABEL (allday_label), 5);
+	}
 
     if (timezone_button) {
         space_label = gtk_label_new("  ");
@@ -143,9 +156,83 @@ static void mark_appointment_unchanged(appt_win *apptw)
     }
 }
 
+/**
+  * C++ version 0.4 char* style "itoa":
+  * Written by Lukás Chmela
+  * Released under GPLv3.
+
+  */
+char* itoa(int value, char* result, int base) {
+	// check that the base if valid
+	if (base < 2 || base > 36) { *result = '\0'; return result; }
+
+	char* ptr = result, *ptr1 = result, tmp_char;
+	int tmp_value;
+
+	do {
+		tmp_value = value;
+		value /= base;
+		*ptr++ = "zyxwvutsrqponmlkjihgfedcba9876543210123456789abcdefghijklmnopqrstuvwxyz" [35 + (tmp_value - value * base)];
+	} while ( value );
+
+	// Apply negative sign
+	if (tmp_value < 0) *ptr++ = '-';
+	*ptr-- = '\0';
+	while(ptr1 < ptr) {
+		tmp_char = *ptr;
+		*ptr--= *ptr1;
+		*ptr1++ = tmp_char;
+	}
+	return result;
+}
+
+void check_date_diff_days(appt_win *apptw)
+{	
+	char *text_Start_date, s_day[9];
+    char *text_End_date, e_day[9];
+	
+	struct tm tm_s_day, tm_e_day;
+	gint i_days=0;
+	char str_i_days[40];
+	gboolean allDay_act;
+	
+	allDay_act = gtk_toggle_button_get_active(
+            GTK_TOGGLE_BUTTON(apptw->AllDay_checkbutton));
+	if (allDay_act) {
+	
+		text_Start_date =(char *)(gtk_button_get_label(
+				GTK_BUTTON(apptw->StartDate_button)));
+		
+		strcpy(s_day, orage_i18_date_to_icaldate(text_Start_date));
+
+		tm_s_day = orage_icaltime_to_tm_time(s_day, FALSE);
+
+		text_End_date = (char*)(gtk_button_get_label(
+				GTK_BUTTON(apptw->EndDate_button)));
+		strcpy(e_day, orage_i18_date_to_icaldate(text_End_date));			
+		tm_e_day = orage_icaltime_to_tm_time(e_day, FALSE);
+		i_days      = orage_days_between(&tm_s_day, &tm_e_day);		
+		
+		itoa(i_days,str_i_days,10);
+
+
+		if (i_days  >= 0) {
+			gtk_label_set_text(GTK_LABEL(apptw->Dur_AllDay_Number_label), str_i_days);
+			return; 
+		}
+		if (i_days < 0) {
+			gtk_label_set_text(GTK_LABEL(apptw->Dur_AllDay_Number_label), _("X"));
+			return;
+		}
+	
+	}
+	else
+		gtk_label_set_text(GTK_LABEL(apptw->Dur_AllDay_Number_label), _(" --- "));	
+}
+
 static void set_time_sensitivity(appt_win *apptw)
 {
-    gboolean dur_act, allDay_act, comp_act, due_act;
+    gboolean dur_act, allDay_act, comp_act, due_act, tmp_dur_act;
 
     dur_act = gtk_toggle_button_get_active(
             GTK_TOGGLE_BUTTON(apptw->Dur_checkbutton));
@@ -174,6 +261,9 @@ static void set_time_sensitivity(appt_win *apptw)
         gtk_widget_set_sensitive(apptw->Dur_spin_hh_label, FALSE);
         gtk_widget_set_sensitive(apptw->Dur_spin_mm, FALSE);
         gtk_widget_set_sensitive(apptw->Dur_spin_mm_label, FALSE);
+		gtk_widget_set_sensitive(apptw->Dur_checkbutton, FALSE);
+		tmp_dur_act = dur_act;
+		dur_act = FALSE;
         if (dur_act) {
             gtk_widget_set_sensitive(apptw->EndDate_button, FALSE);
             gtk_widget_set_sensitive(apptw->Dur_spin_dd, due_act);
@@ -184,11 +274,15 @@ static void set_time_sensitivity(appt_win *apptw)
             gtk_widget_set_sensitive(apptw->Dur_spin_dd, FALSE);
             gtk_widget_set_sensitive(apptw->Dur_spin_dd_label, FALSE);
         }
+		dur_act = tmp_dur_act;
+		check_date_diff_days(apptw);
     }
     else {
         gtk_widget_set_sensitive(apptw->StartTime_spin_hh, TRUE);
         gtk_widget_set_sensitive(apptw->StartTime_spin_mm, TRUE);
         gtk_widget_set_sensitive(apptw->StartTimezone_button, TRUE);
+		gtk_label_set_text(GTK_LABEL(apptw->Dur_AllDay_Number_label), _(" --- "));
+
         if (dur_act) {
             gtk_widget_set_sensitive(apptw->EndDate_button, FALSE);
             gtk_widget_set_sensitive(apptw->EndTime_spin_hh, FALSE);
@@ -1381,6 +1475,9 @@ static void on_Date_button_clicked_cb(GtkWidget *button, gpointer *user_data)
 
     if (orage_date_button_clicked(button, selDate_dialog))
         mark_appointment_changed(apptw);
+		
+		
+	check_date_diff_days(apptw);
 }
 
 static void on_recur_Date_button_clicked_cb(GtkWidget *button
@@ -2798,11 +2895,14 @@ static void build_general_page(appt_win *apptw)
     apptw->StartDate_button = gtk_button_new();
     apptw->StartTime_spin_hh = gtk_spin_button_new_with_range(0, 23, 1);
     apptw->StartTime_spin_mm = gtk_spin_button_new_with_range(0, 59, 1);
+	apptw->Dur_AllDay_label = gtk_label_new(_("Days:"));
+	
     apptw->StartTimezone_button = gtk_button_new();
     apptw->StartTime_hbox = datetime_hbox_new(
             apptw->StartDate_button, 
             apptw->StartTime_spin_hh, 
-            apptw->StartTime_spin_mm, 
+            apptw->StartTime_spin_mm,
+			apptw->Dur_AllDay_label,
             apptw->StartTimezone_button);
     orage_table_add_row(apptw->TableGeneral
             , apptw->Start_label, apptw->StartTime_hbox
@@ -2820,11 +2920,14 @@ static void build_general_page(appt_win *apptw)
     apptw->EndDate_button = gtk_button_new();
     apptw->EndTime_spin_hh = gtk_spin_button_new_with_range(0, 23, 1);
     apptw->EndTime_spin_mm = gtk_spin_button_new_with_range(0, 59, 1);
+	apptw->Dur_AllDay_Number_label = gtk_label_new(_(" --- "));
+	
     apptw->EndTimezone_button = gtk_button_new();
     apptw->EndTime_hbox = datetime_hbox_new(
             apptw->EndDate_button, 
             apptw->EndTime_spin_hh, 
-            apptw->EndTime_spin_mm, 
+            apptw->EndTime_spin_mm,
+			apptw->Dur_AllDay_Number_label,
             apptw->EndTimezone_button);
     gtk_box_pack_end(GTK_BOX(apptw->End_hbox)
             , apptw->EndTime_hbox, TRUE, TRUE, 0);
@@ -2878,7 +2981,8 @@ static void build_general_page(appt_win *apptw)
     apptw->CompletedTime_hbox = datetime_hbox_new(
             apptw->CompletedDate_button, 
             apptw->CompletedTime_spin_hh, 
-            apptw->CompletedTime_spin_mm, 
+            apptw->CompletedTime_spin_mm,
+			NULL,
             apptw->CompletedTimezone_button);
     gtk_box_pack_end(GTK_BOX(apptw->Completed_hbox)
             , apptw->CompletedTime_hbox, TRUE, TRUE, 0);
@@ -3511,7 +3615,7 @@ static void build_recurrence_page(appt_win *apptw)
     apptw->Recur_exception_incl_time_hbox = datetime_hbox_new(
             apptw->Recur_exception_incl_rb
             , apptw->Recur_exception_incl_spin_hh
-            , apptw->Recur_exception_incl_spin_mm, NULL);
+            , apptw->Recur_exception_incl_spin_mm, NULL, NULL);
     gtk_box_pack_start(GTK_BOX(apptw->Recur_exception_type_vbox)
             , apptw->Recur_exception_incl_time_hbox, FALSE, FALSE, 0);
 
